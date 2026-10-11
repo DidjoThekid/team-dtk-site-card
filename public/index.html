@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Carte Team DTK</title><link rel="stylesheet" href="/style.css">
+</head><body>
+<div class="wrap">
+  <div class="logo">TEAM DTK</div>
+
+  <div class="card" id="login">
+    <h1>Ta Carte Team DTK</h1>
+    <p class="sub">Entre les 8 chiffres de ton code pour accéder à ton profil.</p>
+    <input id="code" class="code" inputmode="numeric" maxlength="8" placeholder="••••••••" autocomplete="off">
+    <button id="go">Accéder</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card profile hidden" id="profile">
+    <div class="avatar" id="av"></div>
+    <div class="name" id="nm"></div>
+    <span class="badge" id="rl"></span>
+    <div class="mono" id="cd"></div>
+    <a id="dl" class="hidden"><button>⬇ Télécharger ma Carte Team DTK</button></a>
+    <p class="sub hidden" id="none" style="margin-top:18px">Ta carte n’est pas encore disponible.</p>
+    <button class="ghost" id="back">Changer de code</button>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+async function go(){
+  $('err').textContent='';
+  const code=$('code').value.replace(/\D/g,'').slice(0,8);
+  if(code.length!==8){$('err').textContent='Le code doit contenir 8 chiffres.';return;}
+  $('go').disabled=true;
+  try{
+    const r=await fetch('/api/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
+    const d=await r.json();
+    if(!r.ok){$('err').textContent=d.error||'Erreur.';return;}
+    $('av').textContent=d.name.charAt(0);$('nm').textContent=d.name;$('rl').textContent=d.role;
+    $('cd').textContent='CODE '+d.code;
+    if(d.hasCard){$('dl').href='/api/download?code='+d.code;$('dl').classList.remove('hidden');$('none').classList.add('hidden');}
+    else{$('dl').classList.add('hidden');$('none').classList.remove('hidden');}
+    $('login').classList.add('hidden');$('profile').classList.remove('hidden');
+  }catch{$('err').textContent='Connexion impossible.';}
+  finally{$('go').disabled=false;}
+}
+$('go').onclick=go;
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+$('back').onclick=()=>{$('profile').classList.add('hidden');$('login').classList.remove('hidden');$('code').value='';};
+</script>
+</body></html>

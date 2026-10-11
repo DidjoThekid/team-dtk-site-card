@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin — Team DTK</title><link rel="stylesheet" href="/style.css">
+</head><body>
+<div class="wrap" id="wrap">
+  <div class="logo">TEAM DTK · ADMIN</div>
+
+  <div class="card" id="login">
+    <h1>Panel admin</h1>
+    <p class="sub">Entre le mot de passe administrateur.</p>
+    <input id="pw" type="password" placeholder="Mot de passe">
+    <button id="enter">Connexion</button>
+    <div class="err" id="lerr"></div>
+  </div>
+
+  <div class="card hidden" id="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h1 style="margin:0">Codes</h1>
+      <button class="ghost sm" id="logout">Déconnexion</button>
+    </div>
+
+    <div class="row">
+      <input id="ncode" inputmode="numeric" maxlength="8" placeholder="Code (8 chiffres)">
+      <input id="nname" placeholder="Nom">
+      <input id="nrole" placeholder="Rôle (ex : MEMBRE)">
+      <button id="add">Ajouter</button>
+    </div>
+    <div class="err" id="perr"></div>
+
+    <table>
+      <thead><tr><th>Code</th><th>Nom</th><th>Rôle</th><th>Carte</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.webp,.pdf">
+<script>
+const $=id=>document.getElementById(id);
+let PW=sessionStorage.getItem('dtk_pw')||'';
+let uploadFor=null;
+
+const api=(url,opt={})=>fetch(url,{...opt,headers:{'Content-Type':'application/json','x-admin-password':PW,...(opt.headers||{})}});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function load(){
+  const r=await api('/api/admin/codes');
+  if(r.status===401){sessionStorage.removeItem('dtk_pw');PW='';show(false);return false;}
+  const list=await r.json();
+  $('rows').innerHTML=list.map(m=>`<tr>
+    <td style="font-family:ui-monospace,monospace">${esc(m.code)}</td>
+    <td>${esc(m.name)}</td><td>${esc(m.role)}</td>
+    <td>${m.file?`<span class="ok">✓</span> <span class="tag">${esc(m.file.name)}</span>`:'<span class="tag">aucune</span>'}</td>
+    <td class="act">
+      <button class="ghost sm" data-up="${m.code}">${m.file?'Remplacer':'Ajouter carte'}</button>
+      ${m.file?`<button class="ghost sm" data-rmf="${m.code}">Retirer carte</button>`:''}
+      <button class="danger sm" data-del="${m.code}">Supprimer</button>
+    </td></tr>`).join('');
+  return true;
+}
+function show(on){$('login').classList.toggle('hidden',on);$('panel').classList.toggle('hidden',!on);$('wrap').classList.toggle('wide',on);}
+
+$('enter').onclick=async()=>{
+  PW=$('pw').value;$('lerr').textContent='';
+  if(await load()){sessionStorage.setItem('dtk_pw',PW);show(true);}
+  else $('lerr').textContent='Mot de passe incorrect.';
+};
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('enter').click();});
+$('logout').onclick=()=>{sessionStorage.removeItem('dtk_pw');PW='';show(false);};
+
+$('add').onclick=async()=>{
+  $('perr').textContent='';
+  const body={code:$('ncode').value,name:$('nname').value,role:$('nrole').value||'MEMBRE'};
+  const r=await api('/api/admin/codes',{method:'POST',body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){$('perr').textContent=d.error;return;}
+  $('ncode').value=$('nname').value=$('nrole').value='';load();
+};
+
+$('rows').addEventListener('click',async e=>{
+  const t=e.target;
+  if(t.dataset.del){
+    if(!confirm('Supprimer le code '+t.dataset.del+' et sa carte ?'))return;
+    await api('/api/admin/codes?code='+t.dataset.del,{method:'DELETE'});load();
+  }else if(t.dataset.rmf){
+    await api('/api/admin/upload?code='+t.dataset.rmf,{method:'DELETE'});load();
+  }else if(t.dataset.up){uploadFor=t.dataset.up;$('file').value='';$('file').click();}
+});
+
+$('file').onchange=async()=>{
+  const f=$('file').files[0];if(!f||!uploadFor)return;
+  $('perr').textContent='';
+  if(f.size>3*1024*1024){$('perr').textContent='Fichier trop lourd (3 Mo max).';return;}
+  const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});
+  const r=await api('/api/admin/upload',{method:'POST',body:JSON.stringify({code:uploadFor,filename:f.name,contentType:f.type,data})});
+  const d=await r.json();
+  if(!r.ok)$('perr').textContent=d.error;
+  load();
+};
+
+if(PW)load().then(ok=>show(ok));
+</script>
+</body></html>
