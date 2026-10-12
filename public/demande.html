@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demander ma Carte Team DTK</title><link rel="stylesheet" href="/style.css">
+</head><body>
+<div class="wrap">
+  <div class="logo">TEAM DTK</div>
+
+  <div class="card" id="formCard">
+    <h1>Demande de carte</h1>
+    <p class="sub">Les champs avec * sont obligatoires. Ta demande sera validée par l’équipe.</p>
+
+    <label class="lbl">Adresse e-mail *</label>
+    <input id="email" type="email" autocomplete="email" placeholder="toi@exemple.com">
+
+    <label class="lbl">Numéro de téléphone</label>
+    <input id="phone" type="tel" autocomplete="tel" placeholder="06 12 34 56 78">
+
+    <label class="lbl">Nom *</label>
+    <input id="nom" autocomplete="family-name">
+
+    <label class="lbl">Prénom *</label>
+    <input id="prenom" autocomplete="given-name">
+
+    <label class="lbl">Date de naissance * <span class="tag">(entre 2000 et 2017)</span></label>
+    <input id="birth" type="date" min="2000-01-01" max="2017-12-31">
+
+    <label class="lbl">Photo de ta tête * <span class="tag">(visage bien visible)</span></label>
+    <input id="photo" type="file" accept="image/*">
+    <img id="prev" class="hidden prev" alt="Aperçu">
+
+    <input id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+    <button id="send">Envoyer ma demande</button>
+    <div class="err" id="err"></div>
+    <p class="sub" style="margin:14px 0 0;text-align:center"><a href="/" style="color:var(--acc)">← J’ai déjà un code</a></p>
+  </div>
+
+  <div class="card profile hidden" id="done">
+    <div class="avatar">✓</div>
+    <h1>Demande envoyée</h1>
+    <p class="sub">L’équipe Team DTK va l’examiner. Une fois acceptée, tu recevras ton code pour télécharger ta carte.</p>
+    <a href="/"><button class="ghost">Retour</button></a>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let photo=null;
+
+function compress(file){
+  return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(file),i=new Image();
+    i.onload=()=>{
+      const s=Math.min(1,800/Math.max(i.width,i.height));
+      const w=Math.round(i.width*s),h=Math.round(i.height*s);
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(i,0,0,w,h);URL.revokeObjectURL(u);
+      res(c.toDataURL('image/jpeg',0.85).split(',')[1]);
+    };
+    i.onerror=rej;i.src=u;
+  });
+}
+
+$('photo').onchange=async()=>{
+  photo=null;$('prev').classList.add('hidden');$('err').textContent='';
+  const f=$('photo').files[0];if(!f)return;
+  try{photo=await compress(f);$('prev').src='data:image/jpeg;base64,'+photo;$('prev').classList.remove('hidden');}
+  catch{$('err').textContent='Photo illisible, essaie une autre image.';}
+};
+
+$('send').onclick=async()=>{
+  const err=m=>{$('err').textContent=m;};err('');
+  const v={email:$('email').value.trim(),phone:$('phone').value.trim(),nom:$('nom').value.trim(),
+    prenom:$('prenom').value.trim(),birth:$('birth').value};
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email))return err('Adresse e-mail invalide.');
+  if(!v.nom)return err('Le nom est requis.');
+  if(!v.prenom)return err('Le prénom est requis.');
+  if(!v.birth)return err('La date de naissance est requise.');
+  if(v.birth<'2000-01-01'||v.birth>'2017-12-31')return err('La date de naissance doit être entre 2000 et 2017.');
+  if(!photo)return err('La photo est requise.');
+
+  $('send').disabled=true;$('send').textContent='Envoi…';
+  try{
+    const r=await fetch('/api/request',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...v,photo,photoType:'image/jpeg',website:$('website').value})});
+    const d=await r.json();
+    if(!r.ok){err(d.error||'Erreur.');return;}
+
+    // Notification e-mail via FormSubmit (n'empêche pas la demande si ça échoue)
+    try{
+      await fetch('https://formsubmit.co/ajax/team-dtk@outlook.com',{
+        method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({
+          _subject:'Nouvelle demande de Carte Team DTK',_template:'table',_captcha:'false',
+          Prénom:v.prenom,Nom:v.nom,Email:v.email,Téléphone:v.phone||'—',Naissance:v.birth,
+          Valider_dans_le_panel:location.origin+'/admin.html'
+        })
+      });
+    }catch{}
+    $('formCard').classList.add('hidden');$('done').classList.remove('hidden');
+  }catch{err('Connexion impossible.');}
+  finally{$('send').disabled=false;$('send').textContent='Envoyer ma demande';}
+};
+</script>
+</body></html>
