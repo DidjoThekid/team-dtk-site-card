@@ -25,9 +25,21 @@
     <label class="lbl">Date de naissance * <span class="tag">(entre 2000 et 2017)</span></label>
     <input id="birth" type="date" min="2000-01-01" max="2017-12-31">
 
-    <label class="lbl">Photo de ta tête * <span class="tag">(visage bien visible)</span></label>
-    <input id="photo" type="file" accept="image/*">
-    <img id="prev" class="hidden prev" alt="Aperçu">
+    <label class="lbl">Photo de ton visage * <span class="tag">(bonne lumière, visage de face, sans casquette ni lunettes de soleil)</span></label>
+    <button type="button" id="openCam" class="ghost">📷 Ouvrir la caméra</button>
+
+    <div id="cam" class="cam hidden">
+      <video id="vid" playsinline muted autoplay></video>
+      <svg viewBox="0 0 300 400" preserveAspectRatio="none" aria-hidden="true">
+        <path fill-rule="evenodd" fill="rgba(0,0,0,.55)" d="M0 0H300V400H0Z M55 185 a95 125 0 1 0 190 0 a95 125 0 1 0 -190 0Z"/>
+        <ellipse cx="150" cy="185" rx="95" ry="125" fill="none" stroke="#ffb020" stroke-width="3" stroke-dasharray="8 6"/>
+      </svg>
+      <div class="hint">Place ton visage dans l’ovale</div>
+    </div>
+    <button type="button" id="snap" class="hidden">Prendre la photo</button>
+
+    <img id="shot" class="shot hidden" alt="Ta photo">
+    <button type="button" id="retake" class="ghost hidden">Reprendre la photo</button>
 
     <input id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
 
@@ -45,31 +57,58 @@
 </div>
 <script>
 const $=id=>document.getElementById(id);
-let photo=null;
+const err=m=>{$('err').textContent=m;};
+let photo=null,stream=null;
 
-function compress(file){
-  return new Promise((res,rej)=>{
-    const u=URL.createObjectURL(file),i=new Image();
-    i.onload=()=>{
-      const s=Math.min(1,800/Math.max(i.width,i.height));
-      const w=Math.round(i.width*s),h=Math.round(i.height*s);
-      const c=document.createElement('canvas');c.width=w;c.height=h;
-      c.getContext('2d').drawImage(i,0,0,w,h);URL.revokeObjectURL(u);
-      res(c.toDataURL('image/jpeg',0.85).split(',')[1]);
-    };
-    i.onerror=rej;i.src=u;
-  });
+function stopCam(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=null;$('vid').srcObject=null;
 }
 
-$('photo').onchange=async()=>{
-  photo=null;$('prev').classList.add('hidden');$('err').textContent='';
-  const f=$('photo').files[0];if(!f)return;
-  try{photo=await compress(f);$('prev').src='data:image/jpeg;base64,'+photo;$('prev').classList.remove('hidden');}
-  catch{$('err').textContent='Photo illisible, essaie une autre image.';}
-};
+async function openCam(){
+  err('');photo=null;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    return err('Caméra non disponible sur cet appareil ou ce navigateur.');
+  }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:1280},height:{ideal:1280}},audio:false
+    });
+    $('vid').srcObject=stream;
+    await $('vid').play().catch(()=>{});
+    $('openCam').classList.add('hidden');
+    $('shot').classList.add('hidden');$('retake').classList.add('hidden');
+    $('cam').classList.remove('hidden');$('snap').classList.remove('hidden');
+  }catch{
+    err('Impossible d’accéder à la caméra. Autorise-la dans les réglages du navigateur, puis réessaie.');
+  }
+}
+
+function snap(){
+  const v=$('vid');
+  if(!v.videoWidth)return err('La caméra n’est pas encore prête, réessaie dans une seconde.');
+  // Recadrage centré 3:4 = exactement la zone visible dans le cadre
+  const vw=v.videoWidth,vh=v.videoHeight,ratio=3/4;
+  let sx=0,sy=0,sw=vw,sh=vh;
+  if(vw/vh>ratio){sw=vh*ratio;sx=(vw-sw)/2;}else{sh=vw/ratio;sy=(vh-sh)/2;}
+  const c=document.createElement('canvas');c.width=600;c.height=800;
+  c.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,600,800);
+  const url=c.toDataURL('image/jpeg',0.85);
+  photo=url.split(',')[1];
+  $('shot').src=url;
+  stopCam();
+  $('cam').classList.add('hidden');$('snap').classList.add('hidden');
+  $('shot').classList.remove('hidden');$('retake').classList.remove('hidden');
+  err('');
+}
+
+$('openCam').onclick=openCam;
+$('snap').onclick=snap;
+$('retake').onclick=openCam;
+window.addEventListener('pagehide',stopCam);
 
 $('send').onclick=async()=>{
-  const err=m=>{$('err').textContent=m;};err('');
+  err('');
   const v={email:$('email').value.trim(),phone:$('phone').value.trim(),nom:$('nom').value.trim(),
     prenom:$('prenom').value.trim(),birth:$('birth').value};
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email))return err('Adresse e-mail invalide.');
@@ -77,7 +116,7 @@ $('send').onclick=async()=>{
   if(!v.prenom)return err('Le prénom est requis.');
   if(!v.birth)return err('La date de naissance est requise.');
   if(v.birth<'2000-01-01'||v.birth>'2017-12-31')return err('La date de naissance doit être entre 2000 et 2017.');
-  if(!photo)return err('La photo est requise.');
+  if(!photo)return err('Prends ta photo avec la caméra (champ obligatoire).');
 
   $('send').disabled=true;$('send').textContent='Envoi…';
   try{
@@ -97,6 +136,7 @@ $('send').onclick=async()=>{
         })
       });
     }catch{}
+    stopCam();
     $('formCard').classList.add('hidden');$('done').classList.remove('hidden');
   }catch{err('Connexion impossible.');}
   finally{$('send').disabled=false;$('send').textContent='Envoyer ma demande';}
