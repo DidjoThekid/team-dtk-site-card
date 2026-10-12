@@ -37,3 +37,9 @@ td.act{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid var(--acc);color:var(--acc);margin-left:6px}
 .pill.g{border-color:#4ade80;color:#4ade80}
 h2.sec{font-size:16px;margin:22px 0 0}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.modal.hidden{display:none}
+.mbox{max-width:520px;width:100%;text-align:center}
+.mbox img{max-width:100%;max-height:70vh;border-radius:14px;border:1px solid var(--line)}
+.mbtns{display:flex;gap:8px;justify-content:center;margin-top:14px}
+.req img{cursor:zoom-in}
