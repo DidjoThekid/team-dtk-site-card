@@ -21,6 +21,9 @@
       <button class="ghost sm" id="logout">Déconnexion</button>
     </div>
 
+    <div id="reqs"></div>
+
+    <h2 class="sec">Ajouter un code</h2>
     <div class="row">
       <input id="ncode" inputmode="numeric" maxlength="8" placeholder="Code (8 chiffres)">
       <input id="nname" placeholder="Nom">
@@ -57,6 +60,7 @@ async function load(){
       ${m.file?`<button class="ghost sm" data-rmf="${m.code}">Retirer carte</button>`:''}
       <button class="danger sm" data-del="${m.code}">Supprimer</button>
     </td></tr>`).join('');
+  loadReqs();
   return true;
 }
 function show(on){$('login').classList.toggle('hidden',on);$('panel').classList.toggle('hidden',!on);$('wrap').classList.toggle('wide',on);}
@@ -77,6 +81,42 @@ $('add').onclick=async()=>{
   if(!r.ok){$('perr').textContent=d.error;return;}
   $('ncode').value=$('nname').value=$('nrole').value='';load();
 };
+
+async function loadReqs(){
+  const r=await api('/api/admin/requests');
+  if(!r.ok)return;
+  const list=await r.json();
+  const fd=d=>d.split('-').reverse().join('/');
+  const pend=list.filter(q=>q.status==='pending').length;
+  $('reqs').innerHTML=list.length?`<h2 class="sec">Demandes de carte${pend?` (${pend} en attente)`:''}</h2>`+list.map(q=>`
+    <div class="req">
+      <a href="${esc(q.photo)}" target="_blank" rel="noopener"><img src="${esc(q.photo)}" alt=""></a>
+      <div class="info">
+        <b>${esc(q.prenom)} ${esc(q.nom)}</b>
+        ${q.status==='approved'?`<span class="pill g">ACCEPTÉE</span>`:`<span class="pill">EN ATTENTE</span>`}<br>
+        ${esc(q.email)}${q.phone?' · '+esc(q.phone):''}<br>
+        <span class="tag">Né(e) le ${esc(fd(q.birth))} · demandé le ${esc(new Date(q.createdAt).toLocaleDateString('fr-FR'))}</span>
+        ${q.status==='approved'?`<br>Code : <b style="font-family:ui-monospace,monospace">${esc(q.code)}</b>`:''}
+      </div>
+      <div class="btns">
+        ${q.status==='pending'
+          ?`<button class="sm" data-approve="${q.id}">Accepter</button><button class="danger sm" data-reject="${q.id}">Refuser</button>`
+          :`<a class="sm" href="${esc(q.photo)}" download target="_blank" rel="noopener"><button class="ghost sm">Photo</button></a><button class="ghost sm" data-archive="${q.id}">Archiver</button>`}
+      </div>
+    </div>`).join(''):'';
+}
+$('reqs').addEventListener('click',async e=>{
+  const t=e.target,id=t.dataset.approve||t.dataset.reject||t.dataset.archive;
+  if(!id)return;
+  const action=t.dataset.approve?'approve':t.dataset.reject?'reject':'delete';
+  if(action==='reject'&&!confirm('Refuser et supprimer cette demande (photo comprise) ?'))return;
+  if(action==='delete'&&!confirm('Archiver : la demande et la photo seront supprimées. Continuer ?'))return;
+  const r=await api('/api/admin/requests',{method:'POST',body:JSON.stringify({id,action})});
+  const d=await r.json();
+  if(!r.ok){$('perr').textContent=d.error;return;}
+  if(action==='approve')alert('Demande acceptée. Code créé : '+d.code+'\nAjoute maintenant sa carte sur ce code dans la liste ci-dessous.');
+  load();
+});
 
 $('rows').addEventListener('click',async e=>{
   const t=e.target;
