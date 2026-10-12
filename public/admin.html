@@ -38,11 +38,24 @@
     </table>
   </div>
 </div>
+
+<div id="modal" class="modal hidden">
+  <div class="mbox">
+    <img id="big" alt="">
+    <div class="mbtns">
+      <button class="sm" id="mdl">Télécharger</button>
+      <button class="ghost sm" id="mcp">Copier</button>
+      <button class="ghost sm" id="mcl">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file" class="hidden" accept=".png,.jpg,.jpeg,.webp,.pdf">
 <script>
 const $=id=>document.getElementById(id);
 let PW=sessionStorage.getItem('dtk_pw')||'';
 let uploadFor=null;
+let REQS=[];
 
 const api=(url,opt={})=>fetch(url,{...opt,headers:{'Content-Type':'application/json','x-admin-password':PW,...(opt.headers||{})}});
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -82,15 +95,16 @@ $('add').onclick=async()=>{
   $('ncode').value=$('nname').value=$('nrole').value='';load();
 };
 
+/* ---------- Demandes ---------- */
 async function loadReqs(){
   const r=await api('/api/admin/requests');
   if(!r.ok)return;
-  const list=await r.json();
+  REQS=await r.json();
   const fd=d=>d.split('-').reverse().join('/');
-  const pend=list.filter(q=>q.status==='pending').length;
-  $('reqs').innerHTML=list.length?`<h2 class="sec">Demandes de carte${pend?` (${pend} en attente)`:''}</h2>`+list.map(q=>`
+  const pend=REQS.filter(q=>q.status==='pending').length;
+  $('reqs').innerHTML=REQS.length?`<h2 class="sec">Demandes de carte${pend?` (${pend} en attente)`:''}</h2>`+REQS.map(q=>`
     <div class="req">
-      <a href="${esc(q.photo)}" target="_blank" rel="noopener"><img src="${esc(q.photo)}" alt=""></a>
+      <img src="${esc(q.photo)}" alt="" data-view="${q.id}">
       <div class="info">
         <b>${esc(q.prenom)} ${esc(q.nom)}</b>
         ${q.status==='approved'?`<span class="pill g">ACCEPTÉE</span>`:`<span class="pill">EN ATTENTE</span>`}<br>
@@ -99,27 +113,73 @@ async function loadReqs(){
         ${q.status==='approved'?`<br>Code : <b style="font-family:ui-monospace,monospace">${esc(q.code)}</b>`:''}
       </div>
       <div class="btns">
+        <button class="ghost sm" data-view="${q.id}">Aperçu</button>
+        <button class="ghost sm" data-dl="${q.id}">Télécharger</button>
+        <button class="ghost sm" data-copy="${q.id}">Copier</button>
         ${q.status==='pending'
           ?`<button class="sm" data-approve="${q.id}">Accepter</button><button class="danger sm" data-reject="${q.id}">Refuser</button>`
-          :`<a class="sm" href="${esc(q.photo)}" download target="_blank" rel="noopener"><button class="ghost sm">Photo</button></a><button class="ghost sm" data-archive="${q.id}">Archiver</button>`}
+          :`<button class="danger sm" data-archive="${q.id}">Archiver</button>`}
       </div>
     </div>`).join(''):'';
 }
-$('reqs').addEventListener('click',async e=>{
-  const t=e.target,id=t.dataset.approve||t.dataset.reject||t.dataset.archive;
-  if(!id)return;
-  const action=t.dataset.approve?'approve':t.dataset.reject?'reject':'delete';
-  if(action==='reject'&&!confirm('Refuser et supprimer cette demande (photo comprise) ?'))return;
-  if(action==='delete'&&!confirm('Archiver : la demande et la photo seront supprimées. Continuer ?'))return;
-  const r=await api('/api/admin/requests',{method:'POST',body:JSON.stringify({id,action})});
-  const d=await r.json();
-  if(!r.ok){$('perr').textContent=d.error;return;}
-  if(action==='approve')alert('Demande acceptée. Code créé : '+d.code+'\nAjoute maintenant sa carte sur ce code dans la liste ci-dessous.');
-  load();
-});
 
-$('rows').addEventListener('click',async e=>{
+async function getPhotoBlob(id){
+  const r=await api('/api/admin/photo?id='+encodeURIComponent(id));
+  if(!r.ok)throw new Error('photo');
+  return r.blob();
+}
+async function dlPhoto(id){
+  const q=REQS.find(x=>x.id===id);
+  const b=await getPhotoBlob(id);
+  const u=URL.createObjectURL(b);
+  const a=document.createElement('a');
+  a.href=u;a.download=(q.prenom+'-'+q.nom+'.jpg').replace(/\s+/g,'_');
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),3000);
+}
+async function copyPhoto(id){
+  const png=getPhotoBlob(id).then(async b=>{
+    const bm=await createImageBitmap(b);
+    const c=document.createElement('canvas');c.width=bm.width;c.height=bm.height;
+    c.getContext('2d').drawImage(bm,0,0);
+    return new Promise(res=>c.toBlob(res,'image/png'));
+  });
+  await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+}
+async function flash(btn,fn,okText){
+  const old=btn.textContent;btn.disabled=true;
+  try{await fn();btn.textContent=okText;}
+  catch{btn.textContent='Échec';}
+  setTimeout(()=>{btn.textContent=old;btn.disabled=false;},1600);
+}
+function openModal(id){
+  const q=REQS.find(x=>x.id===id);if(!q)return;
+  $('big').src=q.photo;
+  $('mdl').dataset.dl=id;$('mcp').dataset.copy=id;
+  $('modal').classList.remove('hidden');
+}
+
+/* ---------- Clics ---------- */
+document.addEventListener('click',async e=>{
   const t=e.target;
+  if(t.id==='modal'||t.id==='mcl'){$('modal').classList.add('hidden');return;}
+  if(t.dataset.view){openModal(t.dataset.view);return;}
+  if(t.dataset.dl){flash(t,()=>dlPhoto(t.dataset.dl),'Téléchargé ✓');return;}
+  if(t.dataset.copy){flash(t,()=>copyPhoto(t.dataset.copy),'Copié ✓');return;}
+
+  const id=t.dataset.approve||t.dataset.reject||t.dataset.archive;
+  if(id){
+    const action=t.dataset.approve?'approve':t.dataset.reject?'reject':'delete';
+    if(action==='reject'&&!confirm('Refuser et supprimer cette demande (photo comprise) ?'))return;
+    if(action==='delete'&&!confirm('Archiver : la demande et la photo seront supprimées. Continuer ?'))return;
+    const r=await api('/api/admin/requests',{method:'POST',body:JSON.stringify({id,action})});
+    const d=await r.json();
+    if(!r.ok){$('perr').textContent=d.error;return;}
+    if(action==='approve')alert('Demande acceptée. Code créé : '+d.code+'\nAjoute maintenant sa carte sur ce code dans la liste ci-dessous.');
+    load();
+    return;
+  }
+
   if(t.dataset.del){
     if(!confirm('Supprimer le code '+t.dataset.del+' et sa carte ?'))return;
     await api('/api/admin/codes?code='+t.dataset.del,{method:'DELETE'});load();
